@@ -5,11 +5,10 @@ static LGFX lcd;                 // LCD描画インスタンス
 static LGFX_Sprite sprite(&lcd); // スプライトエリアインスタンス
 static int initFlag = ON;        // イニシャルフラグ
 static int helloFlag = ON;       // あいさつ再生フラグ
-
-AudioGeneratorMP3 *mp3;
-AudioFileSourceSD *file;
-AudioOutputI2S *out;
-AudioFileSourceID3 *id3;
+static AudioGeneratorMP3 *mp3;
+static AudioFileSourceSD *file;
+static AudioOutputI2S *out;
+static AudioFileSourceID3 *id3;
 
 //******************************
 // セットアップ
@@ -17,12 +16,77 @@ AudioFileSourceID3 *id3;
 void setup()
 {
     M5.begin(true, true, true, false, kMBusModeInput);               // M5stack通信開始
+    M5.Axp.SetSpkEnable(true);                                       // スピーカー有効化
+    WiFi.mode(WIFI_OFF);                                             // Wi-Fi OFF
     Serial2.begin(SERIAL_SPEED, SERIAL_8N1, GPS_TX_PIN, GPS_RX_PIN); // GPSモジュール通信開始
     lcd.init();                                                      // 画面初期化
     sprite.setColorDepth(COLOR_DEPTH);                               // カラーモード
     sprite.setTextColor(ORANGE, BLACK);                              // フォントカラー設定
     sprite.setTextSize(1);                                           // テキストサイズ設定
     sprite.createSprite(lcd.width(), lcd.height());                  // スプライトエリア作成
+
+    // MP3再生タスク起動
+    xTaskCreatePinnedToCore(playVoiceTask, MP3_TASK_NAME, MP3_STACK_SIZE,
+                            NULL, MP3_TASK_PRIORITY, NULL, MP3_CORE_ID);
+    // GPS処理タスク起動
+    xTaskCreatePinnedToCore(gpsTask, GPS_TASK_NAME, GPS_STACK_SIZE,
+                            NULL, GPS_TASK_PRIORITY, NULL, GPS_CORE_ID);
+}
+
+//******************************
+// 音声再生タスク
+//******************************
+void playVoiceTask(void *arg)
+{
+    char buff[128] = "/voice/hello.mp3";
+
+    // ハード側 MP3再生設定
+    out = new AudioOutputI2S(I2S_NUM_0, EXTERNAL_I2S); // 外部D/Aコンバータ設定
+    out->SetPinout(BLCK_PIN, WLCK_PIN, DOUT_PIN);      // 出力ピン設定
+    out->SetOutputModeMono(true);                      // スピーカーをモノラルモードに設定
+    out->SetGain((float)OUTPUT_GAIN / 100.0);          // 音量設定
+                                                       // MP3再生クラスのインスタンス生成
+    file = new AudioFileSourceSD(buff);
+    id3 = new AudioFileSourceID3(file);
+    mp3 = new AudioGeneratorMP3();
+
+    while (1)
+    {
+        if (helloFlag == ON)
+        {
+            mp3->begin(id3, out);
+            helloFlag = OFF;
+        }
+
+        if (mp3->isRunning()) // 再生中か
+        {
+            if (!mp3->loop()) // 再生が終了するまで待ち
+            {
+                vTaskDelay(MP3_DELAY);
+            }
+        }
+        vTaskDelay(MP3_DELAY);
+    }
+}
+
+//******************************
+// GPS処理タスク
+//******************************
+void gpsTask(void *arg)
+{
+    while (1)
+    {
+        readGPSInfo(MAIN_DELAY); // GPS情報読み込み
+        if (initFlag == ON)      // 初回起動か
+        {
+            initGPS(); // GPSモジュールのイニシャル待ち
+        }
+        else // 初回起動でない
+        {
+            displayInfo(); // GPS情報画面表示
+        }
+        vTaskDelay(MAIN_DELAY);
+    }
 }
 
 //******************************
@@ -30,15 +94,7 @@ void setup()
 //******************************
 void loop()
 {
-    readGPSInfo(MAIN_DELAY); // GPS情報読み込み
-    if (initFlag == ON)      // 初回起動か
-    {
-        initGPS(); // GPSモジュールのイニシャル待ち
-    }
-    else // 初回起動でない
-    {
-        displayInfo(); // GPS情報画面表示
-    }
+    vTaskDelay(MAIN_DELAY); // メイン処理ディレイ
 }
 
 //******************************
@@ -112,10 +168,10 @@ static void initGPS()
         initFlag = OFF; // イニシャルフラグOFF
         sprite.printf("Initial END\n");
         sprite.pushSprite(0, 0); // バッファエリアをディスプレイに描画
-        delay(INIT_DELAY);       // イニシャル表示ディレイ
+        vTaskDelay(INIT_DELAY);  // イニシャル表示ディレイ
     }
     sprite.pushSprite(0, 0); // バッファエリアをディスプレイに描画
-    delay(MAIN_DELAY);
+    vTaskDelay(MAIN_DELAY);
 }
 
 //******************************
@@ -200,5 +256,5 @@ static void displayInfo()
     }
 
     sprite.pushSprite(0, 0); // バッファエリアをディスプレイに描画
-    delay(MAIN_DELAY);       // ディレイ
+    vTaskDelay(MAIN_DELAY);  // ディレイ
 }
