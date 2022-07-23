@@ -5,6 +5,7 @@
 #include <TinyGPS++.h>
 #include <LovyanGFX.h>
 #include <time.h>
+#include <WiFi.h>
 #include <driver/i2s.h>
 #include "AudioFileSourceSD.h"
 #include "AudioFileSourceID3.h"
@@ -30,10 +31,23 @@
 #define MP3_DELAY 100         // MP3再生待ちポーリング時間
 #define OUTPUT_GAIN 10.0      // MP3再生音量
 #define JST_OFFSET (9 * 3600) // UTC->JSTのオフセット
-// #define I2S_NUM_0 0
-// #define INTERNAL_I2S 1
+#define I2S_NUM_0 0
+#define EXTERNAL_I2S 0
+#define BLCK_PIN 12
+#define WLCK_PIN 0
+#define DOUT_PIN 2
 #define YEAR_OFFSET 1900 // 年設定時のオフセット
 #define MONTH_OFFSET 1   // 月設定時のオフセット
+//********** MP3再生タスク用 **********
+#define MP3_TASK_NAME "PlayVoiceTask" // タスク名
+#define MP3_STACK_SIZE 4096           // スタックエリアサイズ
+#define MP3_TASK_PRIORITY 1           // タスク優先度
+#define MP3_CORE_ID 0                 // マルチタスク コアID
+//********** GSPタスク用 **********
+#define GPS_TASK_NAME "gpsTask" // タスク名
+#define GPS_STACK_SIZE 4096     // スタックエリアサイズ
+#define GPS_TASK_PRIORITY 0     // タスク優先度
+#define GPS_CORE_ID 1           // マルチタスク コアID
 
 //********************
 //  プロトタイプ宣言
@@ -42,5 +56,6 @@ static void readGPSInfo(unsigned long ms);
 static void displayInfo();
 static void initDisp();
 static void initGPS();
-// static void playVoice(char *filename);
+void playVoiceTask(void *arg);
+void gpsTask(void *arg);
 static void synchTime();
