@@ -1,15 +1,5 @@
 #include "m5_gps.h"
 
-static TinyGPSPlus gps;          // GPS読み込み用
-static LGFX lcd;                 // LCD描画インスタンス
-static LGFX_Sprite sprite(&lcd); // スプライトエリアインスタンス
-static int initFlag = ON;        // イニシャルフラグ
-static int helloFlag = ON;       // あいさつ再生フラグ
-static AudioGeneratorMP3 *mp3;
-static AudioFileSourceSD *file;
-static AudioOutputI2S *out;
-static AudioFileSourceID3 *id3;
-
 //******************************
 // セットアップ
 //******************************
@@ -38,25 +28,24 @@ void setup()
 //******************************
 void playVoiceTask(void *arg)
 {
-    char buff[128] = "/voice/hello.mp3";
-
     // ハード側 MP3再生設定
     out = new AudioOutputI2S(I2S_NUM_0, EXTERNAL_I2S); // 外部D/Aコンバータ設定
     out->SetPinout(BLCK_PIN, WLCK_PIN, DOUT_PIN);      // 出力ピン設定
     out->SetOutputModeMono(true);                      // スピーカーをモノラルモードに設定
-    out->SetGain((float)OUTPUT_GAIN / 100.0);          // 音量設定
+    out->SetGain((float)OUTPUT_GAIN);                  // 音量設定
                                                        // MP3再生クラスのインスタンス生成
-    file = new AudioFileSourceSD(buff);
+    file = new AudioFileSourceSD("/voice/hello.mp3");
     id3 = new AudioFileSourceID3(file);
     mp3 = new AudioGeneratorMP3();
 
-    while (1)
+    if (helloFlag == ON)
     {
-        if (helloFlag == ON)
-        {
-            mp3->begin(id3, out);
-            helloFlag = OFF;
-        }
+        mp3->begin(id3, out);
+        helloFlag = OFF;
+    }
+
+    while (true)
+    {
 
         if (mp3->isRunning()) // 再生中か
         {
@@ -74,10 +63,10 @@ void playVoiceTask(void *arg)
 //******************************
 void gpsTask(void *arg)
 {
-    while (1)
+    while (true)
     {
-        readGPSInfo(MAIN_DELAY); // GPS情報読み込み
-        if (initFlag == ON)      // 初回起動か
+        readGPSInfo(GPS_DELAY); // GPS情報読み込み
+        if (initFlag == ON)     // 初回起動か
         {
             initGPS(); // GPSモジュールのイニシャル待ち
         }
@@ -85,7 +74,7 @@ void gpsTask(void *arg)
         {
             displayInfo(); // GPS情報画面表示
         }
-        vTaskDelay(MAIN_DELAY);
+        vTaskDelay(GPS_DELAY);
     }
 }
 
@@ -94,7 +83,7 @@ void gpsTask(void *arg)
 //******************************
 void loop()
 {
-    vTaskDelay(MAIN_DELAY); // メイン処理ディレイ
+    vTaskDelay(GPS_DELAY); // メイン処理ディレイ
 }
 
 //******************************
@@ -171,7 +160,7 @@ static void initGPS()
         vTaskDelay(INIT_DELAY);  // イニシャル表示ディレイ
     }
     sprite.pushSprite(0, 0); // バッファエリアをディスプレイに描画
-    vTaskDelay(MAIN_DELAY);
+    vTaskDelay(GPS_DELAY);
 }
 
 //******************************
@@ -196,6 +185,14 @@ static void displayInfo()
 {
     RTC_DateTypeDef RTC_DateStruct; // RTC 日付取得用
     RTC_TimeTypeDef RTC_TimeStruct; // RTC 時刻取得用
+    unsigned long recTime;          // 時刻計測用
+    float batVoltage;               //バッテリー電圧
+    float batPercentage;            // バッテリー充電率
+
+    // バッテリー電圧取得
+    batVoltage = M5.Axp.GetBatVoltage();
+    // バッテリー充電率取得
+    batPercentage = (batVoltage < 3.2) ? 0 : (batVoltage - 3.2) * 100;
 
     M5.Rtc.GetDate(&RTC_DateStruct); // 時刻取得
     M5.Rtc.GetTime(&RTC_TimeStruct); // 日付取得
@@ -207,54 +204,104 @@ static void displayInfo()
         // 時刻表示
         sprite.setFont(&fonts::FreeMono9pt7b); // フォント設定(9pt)
         // 時刻表示
-        sprite.printf("%04d/%02d/%02d %02d:%02d:%02d\n\n",
+        sprite.printf("%04d/%02d/%02d %02d:%02d:%02d BAT:%02d%\n\n",
                       RTC_DateStruct.Year, RTC_DateStruct.Month, RTC_DateStruct.Date,
-                      RTC_TimeStruct.Hours, RTC_TimeStruct.Minutes, RTC_TimeStruct.Seconds);
+                      RTC_TimeStruct.Hours, RTC_TimeStruct.Minutes, RTC_TimeStruct.Seconds, batPercentage);
 
-        sprite.setFont(&fonts::FreeMono18pt7b); // フォント設定(18pt)
-        sprite.printf("ALT:");
-        if (gps.altitude.isValid()) // 高度が正常なら
+        if (gps.satellites.value() > 0) // 受信できる衛星あり
         {
-            // 高度表示
-            sprite.printf("%5d m\n", (int)gps.altitude.meters());
-        }
-        else // 高度異常
-        {
-            // 無効データ表示
-            sprite.printf("----- m\n");
-        }
+            sprite.setFont(&fonts::FreeMono18pt7b); // フォント設定(18pt)
+            sprite.printf("ALT:\n");
+            if (gps.satellites.value() >= ALT_MINIMUM_SAT) // 高度が取得可能なら
+            {
+                sprite.setFont(&fonts::FreeMono24pt7b); // フォント設定(18pt)
+                // 高度表示
+                sprite.printf("%5d m\n", (int)gps.altitude.meters());
+            }
+            else // 高度異常
+            {
+                sprite.setFont(&fonts::FreeMono24pt7b); // フォント設定(18pt)
+                // 無効データ表示
+                sprite.printf("----- m\n");
+            }
+            sprite.setFont(&fonts::FreeMono18pt7b); // フォント設定(18pt)
+            sprite.printf("SPD:");
+            if (gps.speed.isValid()) // 速度が正常なら
+            {
+                // 速度表示
+                sprite.printf("%5d km/h\n", (int)gps.speed.kmph());
+            }
+            else // 速度異常
+            {
+                // 無効データ表示
+                sprite.printf("----- km/h\n");
+            }
 
-        sprite.printf("SPD:");
-        if (gps.speed.isValid()) // 速度が正常なら
-        {
-            // 速度表示
-            sprite.printf("%5d km/h\n", (int)gps.speed.kmph());
-        }
-        else // 速度異常
-        {
-            // 無効データ表示
-            sprite.printf("----- km/h\n");
-        }
+            // 位置情報表示
+            sprite.setFont(&fonts::FreeMono12pt7b); // フォント設定
+            sprite.printf("\n");
+            sprite.printf("LAT:%3.6f\n", gps.location.lat());
+            sprite.printf("LNG:%3.6f\n", gps.location.lng());
 
-        // 位置情報表示
-        sprite.setFont(&fonts::FreeMono12pt7b); // フォント設定
-        sprite.printf("\n");
-        sprite.printf("LAT:%3.6f\n", gps.location.lat());
-        sprite.printf("LNG:%3.6f\n", gps.location.lng());
+            // 記録フラグONなら
+            if (recFlag == ON)
+            {
+                // ログをSDカードに書き込み
+                recodingGPSInfo();
+                // 記録時刻更新
+                recTime = millis();
+                recFlag = OFF;
+            }
+            if ((millis() - recTime) > REC_INTERVAL)
+            {
+                recFlag = ON;
+            }
+        }
+        else // 受信できる衛星なし
+        {
+            sprite.setFont(&fonts::FreeMono18pt7b); // フォント設定
+            sprite.printf("\n\nGPS OFF LINE\n");    // メッセージ表示
+        }
     }
     else // 測位無効
     {
-        int x;                       // 文字横位置
-        int y;                       // 文字縦位置
-        char msg[] = "GPS OFF LINE"; // 表示メッセージ
-
-        sprite.setFont(&fonts::FreeMono18pt7b);       // フォント設定
-        x = lcd.width() / 2 - lcd.textWidth(msg) / 2; // 横センタリング位置
-        y = lcd.height() / 2;                         // 縦センタリング位置
-        sprite.setCursor(x, y);                       // カーソル移動
-        sprite.printf("%s\n", msg);                   // メッセージ表示
+        sprite.setFont(&fonts::FreeMono18pt7b); // フォント設定
+        sprite.printf("\n\nGPS OFF LINE\n");    // メッセージ表示
     }
 
     sprite.pushSprite(0, 0); // バッファエリアをディスプレイに描画
-    vTaskDelay(MAIN_DELAY);  // ディレイ
+    vTaskDelay(GPS_DELAY);   // ディレイ
+}
+
+//******************************
+// GPS情報 記録
+//******************************
+static void recodingGPSInfo()
+{
+    File recFile;
+    char filename[MAX_STR] = "YYYY_MM_DD.log";
+    RTC_DateTypeDef RTC_DateStruct; // Date
+    RTC_TimeTypeDef RTC_TimeStruct; // Time
+
+    M5.Rtc.GetDate(&RTC_DateStruct); // 日付取得
+    M5.Rtc.GetTime(&RTC_TimeStruct); // 日付取得
+
+    sprintf(filename, "%0d%0d%0d.log",
+            RTC_DateStruct.Year,
+            RTC_DateStruct.Month,
+            RTC_DateStruct.Date);
+
+    // SDカードのファイルオープン(追記モード)
+    SD.open(filename, FILE_APPEND);
+    // SDカードへ書き込み
+    recFile.printf("%2d:%2d:%2d,%d,%d,%lf,%lf\n",
+                   RTC_TimeStruct.Hours,
+                   RTC_TimeStruct.Minutes,
+                   RTC_TimeStruct.Seconds,
+                   (int)gps.altitude.meters(),
+                   (int)gps.speed.kmph(),
+                   gps.location.lat(),
+                   gps.location.lng());
+    // ファイルクローズ
+    recFile.close();
 }
