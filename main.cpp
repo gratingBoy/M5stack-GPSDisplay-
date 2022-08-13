@@ -15,9 +15,12 @@ void setup()
     sprite.setTextSize(1);                                           // テキストサイズ設定
     sprite.createSprite(lcd.width(), lcd.height());                  // スプライトエリア作成
 
+    // MP3再生がうまくいかないため一時的に無効化
+#if 0
     // MP3再生タスク起動
     xTaskCreatePinnedToCore(playVoiceTask, MP3_TASK_NAME, MP3_STACK_SIZE,
                             NULL, MP3_TASK_PRIORITY, NULL, MP3_CORE_ID);
+#endif
     // GPS処理タスク起動
     xTaskCreatePinnedToCore(gpsTask, GPS_TASK_NAME, GPS_STACK_SIZE,
                             NULL, GPS_TASK_PRIORITY, NULL, GPS_CORE_ID);
@@ -130,13 +133,20 @@ static void initGPS()
 {
     RTC_DateTypeDef RTC_DateStruct; // 日付取得用
     RTC_TimeTypeDef RTC_TimeStruct; // 時刻取得用
+    float batVoltage;               //バッテリー電圧
+    float batPercentage;            // バッテリー充電率
+
+    // バッテリー電圧取得
+    batVoltage = M5.Axp.GetBatVoltage();
+    // バッテリー充電率取得
+    batPercentage = (batVoltage < LOW_LIMIT_VOLTAGE) ? 0 : (batVoltage - LOW_LIMIT_VOLTAGE) * 100;
 
     M5.Rtc.GetDate(&RTC_DateStruct); // 日付取得
     M5.Rtc.GetTime(&RTC_TimeStruct); // 時刻取得
 
-    sprite.clear();                         // 画面クリア
-    sprite.setCursor(0, 0);                 // カーソル移動
-    sprite.setFont(&fonts::FreeMono12pt7b); // フォント設定
+    sprite.clear();          // 画面クリア
+    sprite.setCursor(0, 0);  // カーソル移動
+    sprite.setFont(FONT_12); // フォント設定
     // 起動メッセージ表示
     sprite.printf("Talking GPS Logger\n");
     sprite.printf("Version:%s\n", VERSION_NO);
@@ -146,6 +156,7 @@ static void initGPS()
                   RTC_DateStruct.Year, RTC_DateStruct.Month, RTC_DateStruct.Date);
     sprite.printf("RTC:%02d:%02d:%02d\n",
                   RTC_TimeStruct.Hours, RTC_TimeStruct.Minutes, RTC_TimeStruct.Seconds);
+    sprite.printf("Battery:%d%%\n", (int)batPercentage);
     sprite.printf("initializing...");
 
     if (gps.location.isValid()) // GPSの測位有効になったら
@@ -192,7 +203,7 @@ static void displayInfo()
     // バッテリー電圧取得
     batVoltage = M5.Axp.GetBatVoltage();
     // バッテリー充電率取得
-    batPercentage = (batVoltage < 3.2) ? 0 : (batVoltage - 3.2) * 100;
+    batPercentage = (batVoltage < LOW_LIMIT_VOLTAGE) ? 0 : (batVoltage - LOW_LIMIT_VOLTAGE) * 100;
 
     M5.Rtc.GetDate(&RTC_DateStruct); // 時刻取得
     M5.Rtc.GetTime(&RTC_TimeStruct); // 日付取得
@@ -202,29 +213,30 @@ static void displayInfo()
         sprite.clear();         // 画面クリア
         sprite.setCursor(0, 0); // カーソル移動
         // 時刻表示
-        sprite.setFont(&fonts::FreeMono9pt7b); // フォント設定(9pt)
+        sprite.setFont(FONT_9); // フォント設定(9pt)
         // 時刻表示
-        sprite.printf("%04d/%02d/%02d %02d:%02d:%02d BAT:%02d%\n\n",
+        sprite.printf("%04d/%02d/%02d %02d:%02d:%02d BAT:%02d%%\n\n",
                       RTC_DateStruct.Year, RTC_DateStruct.Month, RTC_DateStruct.Date,
-                      RTC_TimeStruct.Hours, RTC_TimeStruct.Minutes, RTC_TimeStruct.Seconds, batPercentage);
+                      RTC_TimeStruct.Hours, RTC_TimeStruct.Minutes, RTC_TimeStruct.Seconds,
+                      (int)batPercentage);
 
         if (gps.satellites.value() > 0) // 受信できる衛星あり
         {
-            sprite.setFont(&fonts::FreeMono18pt7b); // フォント設定(18pt)
+            sprite.setFont(FONT_18); // フォント設定(18pt)
             sprite.printf("ALT:\n");
             if (gps.satellites.value() >= ALT_MINIMUM_SAT) // 高度が取得可能なら
             {
-                sprite.setFont(&fonts::FreeMono24pt7b); // フォント設定(18pt)
+                sprite.setFont(FONT_24); // フォント設定(18pt)
                 // 高度表示
-                sprite.printf("%5d m\n", (int)gps.altitude.meters());
+                sprite.printf("%9d m\n", (int)gps.altitude.meters());
             }
             else // 高度異常
             {
-                sprite.setFont(&fonts::FreeMono24pt7b); // フォント設定(18pt)
+                sprite.setFont(FONT_24); // フォント設定
                 // 無効データ表示
-                sprite.printf("----- m\n");
+                sprite.printf("    ----- m\n");
             }
-            sprite.setFont(&fonts::FreeMono18pt7b); // フォント設定(18pt)
+            sprite.setFont(FONT_18); // フォント設定
             sprite.printf("SPD:");
             if (gps.speed.isValid()) // 速度が正常なら
             {
@@ -238,11 +250,10 @@ static void displayInfo()
             }
 
             // 位置情報表示
-            sprite.setFont(&fonts::FreeMono12pt7b); // フォント設定
+            sprite.setFont(FONT_12); // フォント設定
             sprite.printf("\n");
             sprite.printf("LAT:%3.6f\n", gps.location.lat());
             sprite.printf("LNG:%3.6f\n", gps.location.lng());
-
             // 記録フラグONなら
             if (recFlag == ON)
             {
@@ -252,21 +263,23 @@ static void displayInfo()
                 recTime = millis();
                 recFlag = OFF;
             }
+            // 指定時間経過したか
             if ((millis() - recTime) > REC_INTERVAL)
             {
+                // 記録フラグON
                 recFlag = ON;
             }
         }
         else // 受信できる衛星なし
         {
-            sprite.setFont(&fonts::FreeMono18pt7b); // フォント設定
-            sprite.printf("\n\nGPS OFF LINE\n");    // メッセージ表示
+            sprite.setFont(FONT_18);             // フォント設定
+            sprite.printf("\n\nGPS OFF LINE\n"); // メッセージ表示
         }
     }
     else // 測位無効
     {
-        sprite.setFont(&fonts::FreeMono18pt7b); // フォント設定
-        sprite.printf("\n\nGPS OFF LINE\n");    // メッセージ表示
+        sprite.setFont(FONT_18);             // フォント設定
+        sprite.printf("\n\nGPS OFF LINE\n"); // メッセージ表示
     }
 
     sprite.pushSprite(0, 0); // バッファエリアをディスプレイに描画
@@ -278,23 +291,26 @@ static void displayInfo()
 //******************************
 static void recodingGPSInfo()
 {
-    File recFile;
-    char filename[MAX_STR] = "YYYY_MM_DD.log";
-    RTC_DateTypeDef RTC_DateStruct; // Date
-    RTC_TimeTypeDef RTC_TimeStruct; // Time
+    File recFile;                        // ファイルポインタ
+    char filename[MAX_STR] = "/GPS.log"; //  ファイル名
+    RTC_DateTypeDef RTC_DateStruct;      // Date
+    RTC_TimeTypeDef RTC_TimeStruct;      // Time
 
     M5.Rtc.GetDate(&RTC_DateStruct); // 日付取得
-    M5.Rtc.GetTime(&RTC_TimeStruct); // 日付取得
+    M5.Rtc.GetTime(&RTC_TimeStruct); // 時刻取得
 
-    sprintf(filename, "%0d%0d%0d.log",
-            RTC_DateStruct.Year,
-            RTC_DateStruct.Month,
-            RTC_DateStruct.Date);
+    //    sprintf(filename, "/%04d%02d%02d.log",
+    //            RTC_DateStruct.Year,
+    //            RTC_DateStruct.Month,
+    //            RTC_DateStruct.Date);
 
     // SDカードのファイルオープン(追記モード)
-    SD.open(filename, FILE_APPEND);
+    recFile = SD.open(filename, FILE_APPEND);
     // SDカードへ書き込み
-    recFile.printf("%2d:%2d:%2d,%d,%d,%lf,%lf\n",
+    recFile.printf("%d/%02d/%02d,%02d:%02d:%02d,%d,%d,%lf,%lf\n",
+                   RTC_DateStruct.Year,
+                   RTC_DateStruct.Month,
+                   RTC_DateStruct.Date,
                    RTC_TimeStruct.Hours,
                    RTC_TimeStruct.Minutes,
                    RTC_TimeStruct.Seconds,
