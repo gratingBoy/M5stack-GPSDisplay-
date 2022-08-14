@@ -15,12 +15,9 @@ void setup()
     sprite.setTextSize(1);                                           // テキストサイズ設定
     sprite.createSprite(lcd.width(), lcd.height());                  // スプライトエリア作成
 
-    // MP3再生がうまくいかないため一時的に無効化
-#if 0
     // MP3再生タスク起動
     xTaskCreatePinnedToCore(playVoiceTask, MP3_TASK_NAME, MP3_STACK_SIZE,
                             NULL, MP3_TASK_PRIORITY, NULL, MP3_CORE_ID);
-#endif
     // GPS処理タスク起動
     xTaskCreatePinnedToCore(gpsTask, GPS_TASK_NAME, GPS_STACK_SIZE,
                             NULL, GPS_TASK_PRIORITY, NULL, GPS_CORE_ID);
@@ -31,6 +28,11 @@ void setup()
 //******************************
 void playVoiceTask(void *arg)
 {
+    AudioGeneratorMP3 *mp3;
+    AudioFileSourceSD *file;
+    AudioOutputI2S *out;
+    AudioFileSourceID3 *id3;
+
     // ハード側 MP3再生設定
     out = new AudioOutputI2S(I2S_NUM_0, EXTERNAL_I2S); // 外部D/Aコンバータ設定
     out->SetPinout(BLCK_PIN, WLCK_PIN, DOUT_PIN);      // 出力ピン設定
@@ -291,22 +293,38 @@ static void displayInfo()
 //******************************
 static void recodingGPSInfo()
 {
-    File recFile;                        // ファイルポインタ
-    char filename[MAX_STR] = "/GPS.log"; //  ファイル名
-    RTC_DateTypeDef RTC_DateStruct;      // Date
-    RTC_TimeTypeDef RTC_TimeStruct;      // Time
+    File recFile;                   // ファイルポインタ
+    char logFilename[MAX_STR];      //  ファイル名
+    RTC_DateTypeDef RTC_DateStruct; // Date
+    RTC_TimeTypeDef RTC_TimeStruct; // Time
+
+    // ログファイル名初期化
+    memset(logFilename, 0x00, sizeof(logFilename));
 
     M5.Rtc.GetDate(&RTC_DateStruct); // 日付取得
     M5.Rtc.GetTime(&RTC_TimeStruct); // 時刻取得
 
-    //    sprintf(filename, "/%04d%02d%02d.log",
-    //            RTC_DateStruct.Year,
-    //            RTC_DateStruct.Month,
-    //            RTC_DateStruct.Date);
+    // ファイル名生成
+    sprintf(logFilename, "/%04d%02d%02d.log",
+            RTC_DateStruct.Year,
+            RTC_DateStruct.Month,
+            RTC_DateStruct.Date);
 
-    // SDカードのファイルオープン(追記モード)
-    recFile = SD.open(filename, FILE_APPEND);
-    // SDカードへ書き込み
+    // ログファイルが存在するか確認し、なければ新規作成する
+    if (SD.exists(logFilename) == true) // ログファイルが存在する
+    {
+        // SDカードのファイルオープン(追記モード)
+        recFile = SD.open(logFilename, FILE_APPEND);
+    }
+    else // ファイルが存在しない
+    {
+        // SDカードのファイルオープン(新規作成)
+        recFile = SD.open(logFilename, FILE_WRITE);
+    }
+
+    // SDカードへログを書き込み
+    // フォーマットは以下
+    // YYYY/MM/DD,hh:mm:ss,高度,速度,緯度,経度
     recFile.printf("%d/%02d/%02d,%02d:%02d:%02d,%d,%d,%lf,%lf\n",
                    RTC_DateStruct.Year,
                    RTC_DateStruct.Month,
