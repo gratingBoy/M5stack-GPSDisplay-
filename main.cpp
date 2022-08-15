@@ -135,16 +135,11 @@ static void initGPS()
 {
     RTC_DateTypeDef RTC_DateStruct; // 日付取得用
     RTC_TimeTypeDef RTC_TimeStruct; // 時刻取得用
-    float batVoltage;               //バッテリー電圧
-    float batPercentage;            // バッテリー充電率
+    int batPercentage;              // バッテリー充電率
 
-    // バッテリー電圧取得
-    batVoltage = M5.Axp.GetBatVoltage();
-    // バッテリー充電率取得
-    batPercentage = (batVoltage < LOW_LIMIT_VOLTAGE) ? 0 : (batVoltage - LOW_LIMIT_VOLTAGE) * 100;
-
-    M5.Rtc.GetDate(&RTC_DateStruct); // 日付取得
-    M5.Rtc.GetTime(&RTC_TimeStruct); // 時刻取得
+    batPercentage = getBatteryPersentage(); // バッテリー充電率取得
+    M5.Rtc.GetDate(&RTC_DateStruct);        // 日付取得
+    M5.Rtc.GetTime(&RTC_TimeStruct);        // 時刻取得
 
     sprite.clear();          // 画面クリア
     sprite.setCursor(0, 0);  // カーソル移動
@@ -199,16 +194,11 @@ static void displayInfo()
     RTC_DateTypeDef RTC_DateStruct; // RTC 日付取得用
     RTC_TimeTypeDef RTC_TimeStruct; // RTC 時刻取得用
     unsigned long recTime;          // 時刻計測用
-    float batVoltage;               //バッテリー電圧
-    float batPercentage;            // バッテリー充電率
+    int batPercentage;              // バッテリー充電率
 
-    // バッテリー電圧取得
-    batVoltage = M5.Axp.GetBatVoltage();
-    // バッテリー充電率取得
-    batPercentage = (batVoltage < LOW_LIMIT_VOLTAGE) ? 0 : (batVoltage - LOW_LIMIT_VOLTAGE) * 100;
-
-    M5.Rtc.GetDate(&RTC_DateStruct); // 時刻取得
-    M5.Rtc.GetTime(&RTC_TimeStruct); // 日付取得
+    batPercentage = getBatteryPersentage(); // バッテリー充電率取得
+    M5.Rtc.GetDate(&RTC_DateStruct);        // 時刻取得
+    M5.Rtc.GetTime(&RTC_TimeStruct);        // 日付取得
 
     if (gps.location.isValid()) // 測位有効
     {
@@ -220,7 +210,7 @@ static void displayInfo()
         sprite.printf("%04d/%02d/%02d %02d:%02d:%02d BAT:%02d%%\n\n",
                       RTC_DateStruct.Year, RTC_DateStruct.Month, RTC_DateStruct.Date,
                       RTC_TimeStruct.Hours, RTC_TimeStruct.Minutes, RTC_TimeStruct.Seconds,
-                      (int)batPercentage);
+                      batPercentage);
 
         if (gps.satellites.value() > 0) // 受信できる衛星あり
         {
@@ -243,7 +233,7 @@ static void displayInfo()
             if (gps.speed.isValid()) // 速度が正常なら
             {
                 // 速度表示
-                sprite.printf("%5d km/h\n", (int)gps.speed.kmph());
+                sprite.printf("%6d km/h\n", (int)gps.speed.kmph());
             }
             else // 速度異常
             {
@@ -263,6 +253,7 @@ static void displayInfo()
                 recodingGPSInfo();
                 // 記録時刻更新
                 recTime = millis();
+                // 記録フラグOFF
                 recFlag = OFF;
             }
             // 指定時間経過したか
@@ -274,14 +265,14 @@ static void displayInfo()
         }
         else // 受信できる衛星なし
         {
-            sprite.setFont(FONT_18);             // フォント設定
-            sprite.printf("\n\nGPS OFF LINE\n"); // メッセージ表示
+            sprite.setFont(FONT_18);              // フォント設定
+            sprite.printf("\n\n GPS OFF LINE\n"); // メッセージ表示
         }
     }
     else // 測位無効
     {
-        sprite.setFont(FONT_18);             // フォント設定
-        sprite.printf("\n\nGPS OFF LINE\n"); // メッセージ表示
+        sprite.setFont(FONT_18);              // フォント設定
+        sprite.printf("\n\n GPS OFF LINE\n"); // メッセージ表示
     }
 
     sprite.pushSprite(0, 0); // バッファエリアをディスプレイに描画
@@ -294,7 +285,7 @@ static void displayInfo()
 static void recodingGPSInfo()
 {
     File recFile;                   // ファイルポインタ
-    char logFilename[MAX_STR];      //  ファイル名
+    char logFilename[MAX_STR];      // ファイル名
     RTC_DateTypeDef RTC_DateStruct; // Date
     RTC_TimeTypeDef RTC_TimeStruct; // Time
 
@@ -315,6 +306,8 @@ static void recodingGPSInfo()
     {
         // SDカードのファイルオープン(追記モード)
         recFile = SD.open(logFilename, FILE_APPEND);
+        // フォーマットの凡例を記入
+        recFile.printf("YYYY/MM/DD,hh:mm:ss,ALT[m],SPD[km/h],LAT,LNG\n");
     }
     else // ファイルが存在しない
     {
@@ -338,4 +331,20 @@ static void recodingGPSInfo()
                    gps.location.lng());
     // ファイルクローズ
     recFile.close();
+}
+
+//******************************
+// バッテリー充電率取得
+//******************************
+static int getBatteryPersentage()
+{
+    float batVoltage;    //バッテリー電圧
+    float batPercentage; // バッテリー充電率
+
+    // バッテリー電圧取得
+    batVoltage = M5.Axp.GetBatVoltage();
+    // バッテリー充電率取得
+    batPercentage = (batVoltage < LOW_LIMIT_VOLTAGE) ? 0 : (batVoltage - LOW_LIMIT_VOLTAGE) * 100;
+
+    return (int)batPercentage;
 }
