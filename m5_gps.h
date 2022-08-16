@@ -28,7 +28,7 @@
 #define INIT_DELAY 2000                // イニシャル表示待ち
 #define ON 1                           // フラグON
 #define OFF 0                          // フラグOFF
-#define VERSION_NO "0.05"              // Version番号
+#define VERSION_NO "0.06"              // Version番号
 #define MP3_DELAY 1                    // MP3再生待ちポーリング時間
 #define OUTPUT_GAIN 0.5                // MP3再生音量
 #define JST_OFFSET (9 * 3600)          // UTC->JSTのオフセット
