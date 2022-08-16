@@ -246,27 +246,28 @@ static void displayInfo()
             sprite.printf("\n");
             sprite.printf("LAT:%3.6f\n", gps.location.lat());
             sprite.printf("LNG:%3.6f\n", gps.location.lng());
-            // 記録フラグONなら
-            if (recFlag == ON)
-            {
-                // ログをSDカードに書き込み
-                recodingGPSInfo();
-                // 記録時刻更新
-                recTime = millis();
-                // 記録フラグOFF
-                recFlag = OFF;
-            }
-            // 指定時間経過したか
-            if ((millis() - recTime) > REC_INTERVAL)
-            {
-                // 記録フラグON
-                recFlag = ON;
-            }
         }
         else // 受信できる衛星なし
         {
             sprite.setFont(FONT_18);              // フォント設定
             sprite.printf("\n\n GPS OFF LINE\n"); // メッセージ表示
+        }
+
+        // 記録フラグONなら
+        if (recFlag == ON)
+        {
+            // ログをSDカードに書き込み
+            recodingGPSInfo();
+            // 記録時刻更新
+            recTime = millis();
+            // 記録フラグOFF
+            recFlag = OFF;
+        }
+        // 指定時間経過したか
+        if ((millis() - recTime) > REC_INTERVAL)
+        {
+            // 記録フラグON
+            recFlag = ON;
         }
     }
     else // 測位無効
@@ -306,13 +307,13 @@ static void recodingGPSInfo()
     {
         // SDカードのファイルオープン(追記モード)
         recFile = SD.open(logFilename, FILE_APPEND);
-        // フォーマットの凡例を記入
-        recFile.printf("YYYY/MM/DD,hh:mm:ss,ALT[m],SPD[km/h],LAT,LNG\n");
     }
     else // ファイルが存在しない
     {
         // SDカードのファイルオープン(新規作成)
         recFile = SD.open(logFilename, FILE_WRITE);
+        // フォーマットの凡例を記入
+        recFile.printf("YYYY/MM/DD,hh:mm:ss,ALT[m],SPD[km/h],LAT,LNG\n");
     }
 
     // SDカードへログを書き込み
